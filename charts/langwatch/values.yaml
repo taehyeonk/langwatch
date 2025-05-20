@@ -12,7 +12,8 @@ global:
         - ALL
     readOnlyRootFilesystem: true
   scheduling:
-    nodeSelector: {}
+    nodeSelector:
+      role: worker
     affinity: {}
     tolerations: []
   monitoring:
@@ -71,10 +72,10 @@ app:
     LANGWATCH_NLP_SERVICE: "http://{{ .Release.Name }}-langwatch-nlp:5561"
     LANGEVALS_ENDPOINT: "http://{{ .Release.Name }}-langevals:5562"
     # User provided environment variables
-    BASE_HOST: "http://localhost:5560"
-    NEXTAUTH_URL: "http://localhost:5560"
-    NEXTAUTH_SECRET: ""  # Users must provide this values
-    API_TOKEN_JWT_SECRET: ""  # Users must provide this values
+    BASE_HOST: "https://langwatch.llmopsdev.sktax.io"
+    NEXTAUTH_URL: "https://langwatch.llmopsdev.sktax.io"
+    NEXTAUTH_SECRET: "Dt6YPSw6YHaTbooOqoE6g4UjvMn1cZXUJubAksbq61w="  # Users must provide this values
+    API_TOKEN_JWT_SECRET: "ETC9IQQKOP5+2kKjbusGt5Uo+gGPCp4oudciUSaezO4="  # Users must provide this values
     # SENDGRID_API_KEY: ""  # Optional
 
 
@@ -162,7 +163,7 @@ opensearch:
   env:
     discovery.type: single-node
     DISABLE_SECURITY_PLUGIN: "true"
-    _JAVA_OPTIONS: "-XX:UseSVE=0"
+    _JAVA_OPTIONS: null
     plugins.anomaly_detection.enabled: "false"
     plugins.flow_framework.enabled: "false"
     plugins.security_analytics.ioc_finding_enabled: "false"
@@ -192,12 +193,15 @@ opensearch:
 
 # Ingress configuration
 ingress:
-  enabled: false
-  className: ""
+  enabled: true
+  className: "nginx"
   annotations: {}
   hosts:
-    - host: chart-example.local
+    - host: langwatch.llmopsdev.sktax.io
       paths:
         - path: /
-          pathType: ImplementationSpecific
-  tls: []
+          pathType: Prefix
+  tls:
+    - secretName: tls-wildcard-llmopsdev-sktax-io
+      hosts:
+        - langwatch.llmopsdev.sktax.io

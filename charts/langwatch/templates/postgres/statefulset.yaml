@@ -59,6 +59,11 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
+      # Node selection
+      {{- with .Values.global.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
   # Persistent volume claim for PostgreSQL data
   {{- if .Values.postgres.persistence.enabled }}
   volumeClaimTemplates:

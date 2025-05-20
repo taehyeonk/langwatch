@@ -67,6 +67,11 @@ spec:
       securityContext:
         fsGroup: 1000
         runAsUser: 1000
+      # Node selection
+      {{- with .Values.global.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
   # Persistent volume claim for OpenSearch data
   {{- if .Values.opensearch.persistence.enabled }}
   volumeClaimTemplates:
