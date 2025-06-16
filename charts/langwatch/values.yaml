@@ -14,7 +14,17 @@ global:
   scheduling:
     nodeSelector:
       role: worker
-    affinity: {}
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+              - ddp-llmops-app01
+              - ddp-llmops-app02
+              - ddp-llmops-app03
     tolerations: []
   monitoring:
     enabled: false
@@ -80,7 +90,7 @@ app:
 
 
 langwatch_nlp:
-  replicaCount: 1
+  replicaCount: 3
   service:
     type: ClusterIP
     port: 5561
@@ -95,6 +105,10 @@ langwatch_nlp:
     LANGWATCH_ENDPOINT: "http://{{ .Release.Name }}-app:5560"
     # For when running on minikube on Mac OS
     # STUDIO_RUNTIME: "async"
+    # https://confluence.tde.sktelecom.com/pages/viewpage.action?pageId=456882198
+    HTTP_PROXY: "http://proxy.llmopsdev.sktax.io:10203"
+    HTTPS_PROXY: "http://proxy.llmopsdev.sktax.io:10203"
+    NO_PROXY: "localhost,127.0.0.0/8,.svc,.cluster.local,cattle-system.svc,.llmopsdev.sktax.io,langwatch-app,172.27.27.46"
 
 langevals:
   replicaCount: 1
@@ -195,7 +209,8 @@ opensearch:
 ingress:
   enabled: true
   className: "nginx"
-  annotations: {}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
   hosts:
     - host: langwatch.llmopsdev.sktax.io
       paths:
