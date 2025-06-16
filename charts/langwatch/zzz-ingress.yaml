@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llmops-langwatch
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  rules:
+    - host: langwatch.llmopsdev.sktax.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: langwatch-app
+                port:
+                  number: 5560
+  tls:
+    - secretName: tls-wildcard-llmopsdev-sktax-io
+      hosts:
+        - langwatch.llmopsdev.sktax.io
