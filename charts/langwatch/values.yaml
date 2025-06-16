@@ -24,7 +24,7 @@ global:
               values:
               - ddp-llmops-app01
               - ddp-llmops-app02
-              - ddp-llmops-app03
+              # - ddp-llmops-app03
     tolerations: []
   monitoring:
     enabled: false
