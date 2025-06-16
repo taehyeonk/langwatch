@@ -22,6 +22,8 @@ spec:
       labels:
         app.kubernetes.io/name: {{ .Release.Name }}-app
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        rollme: "{{ now | unixEpoch }}"
     spec:
       # Pod security context
       securityContext:
