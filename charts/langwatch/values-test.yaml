@@ -207,10 +207,10 @@ ingress:
       http:
         paths:
           - path: /
-            pathType: Prefix       # ← 중요: 기존 ImplementationSpecific 대신 명시
+            pathType: Prefix
             backend:
               service:
-                name: "langwatch-app"
+                name: "{{ .Release.Name }}-app"
                 port:
                   number: 5560
   tls:
