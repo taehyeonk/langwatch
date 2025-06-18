@@ -207,7 +207,7 @@ ingress:
       http:
         paths:
           - path: /
-            pathType: ImplementationSpecific
+            pathType: Prefix       # ← 중요: 기존 ImplementationSpecific 대신 명시
             backend:
               service:
                 name: "langwatch-app"
