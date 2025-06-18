@@ -80,8 +80,8 @@ app:
     LANGWATCH_NLP_SERVICE: "http://{{ .Release.Name }}-langwatch-nlp:5561"
     LANGEVALS_ENDPOINT: "http://{{ .Release.Name }}-langevals:5562"
     # User provided environment variables
-    BASE_HOST: "https://langwatch.llmopsdev.sktax.io"
-    NEXTAUTH_URL: "https://langwatch.llmopsdev.sktax.io"
+    BASE_HOST: "https://langwatch-test.llmopsdev.sktax.io"
+    NEXTAUTH_URL: "https://langwatch-test.llmopsdev.sktax.io"
     NEXTAUTH_SECRET: "Dt6YPSw6YHaTbooOqoE6g4UjvMn1cZXUJubAksbq61w="  # Users must provide this values
     API_TOKEN_JWT_SECRET: "ETC9IQQKOP5+2kKjbusGt5Uo+gGPCp4oudciUSaezO4="  # Users must provide this values
     # SENDGRID_API_KEY: ""  # Optional
