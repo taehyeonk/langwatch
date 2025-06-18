@@ -1,0 +1,219 @@
+# Global configuration
+global:
+  env: production
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  scheduling:
+    nodeSelector:
+      role: worker
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+              - ddp-llmops-app01
+              - ddp-llmops-app02
+              # - ddp-llmops-app03
+    tolerations: []
+  monitoring:
+    enabled: false
+    prometheusAnnotations: true
+
+# Image configurations
+images:
+  app:
+    repository: langwatch/langwatch
+    tag: latest
+    pullPolicy: Always
+  langwatch_nlp:
+    repository: langwatch/langwatch_nlp
+    tag: latest
+    pullPolicy: Always
+  langevals:
+    repository: langwatch/langevals
+    tag: latest
+    pullPolicy: Always
+  postgres:
+    repository: postgres
+    tag: "16"
+    pullPolicy: IfNotPresent
+  redis:
+    repository: redis
+    tag: alpine
+    pullPolicy: IfNotPresent
+  opensearch:
+    repository: langwatch/opensearch-lite
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# Service configurations
+app:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 5560
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  env:
+    SKIP_ENV_VALIDATION: "true"
+    DISABLE_PII_REDACTION: "true"
+    DATABASE_URL: "postgresql://prisma:prisma@{{ .Release.Name }}-postgres:5432/mydb?schema=mydb"
+    ELASTICSEARCH_NODE_URL: "http://{{ .Release.Name }}-opensearch:9200"
+    IS_OPENSEARCH: "true"
+    REDIS_URL: "redis://{{ .Release.Name }}-redis:6379"
+    LANGWATCH_NLP_SERVICE: "http://{{ .Release.Name }}-langwatch-nlp:5561"
+    LANGEVALS_ENDPOINT: "http://{{ .Release.Name }}-langevals:5562"
+    # User provided environment variables
+    BASE_HOST: "https://langwatch.llmopsdev.sktax.io"
+    NEXTAUTH_URL: "https://langwatch.llmopsdev.sktax.io"
+    NEXTAUTH_SECRET: "Dt6YPSw6YHaTbooOqoE6g4UjvMn1cZXUJubAksbq61w="  # Users must provide this values
+    API_TOKEN_JWT_SECRET: "ETC9IQQKOP5+2kKjbusGt5Uo+gGPCp4oudciUSaezO4="  # Users must provide this values
+    # SENDGRID_API_KEY: ""  # Optional
+
+langwatch_nlp:
+  replicaCount: 3
+  service:
+    type: ClusterIP
+    port: 5561
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 6Gi
+  env:
+    LANGWATCH_ENDPOINT: "http://{{ .Release.Name }}-app:5560"
+    # For when running on minikube on Mac OS
+    # STUDIO_RUNTIME: "async"
+    # https://confluence.tde.sktelecom.com/pages/viewpage.action?pageId=456882198
+    HTTP_PROXY: "http://proxy.llmopsdev.sktax.io:10203"
+    HTTPS_PROXY: "http://proxy.llmopsdev.sktax.io:10203"
+    NO_PROXY: "localhost,127.0.0.0/8,.svc,.cluster.local,cattle-system.svc,.llmopsdev.sktax.io,langwatch-app,172.27.27.46"
+
+langevals:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 5562
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 12Gi
+
+postgres:
+  service:
+    type: ClusterIP
+    port: 5432
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 2Gi
+  env:
+    POSTGRES_DB: mydb
+    POSTGRES_USER: prisma
+    POSTGRES_PASSWORD: prisma
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+redis:
+  service:
+    type: ClusterIP
+    port: 6379
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 300m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+
+opensearch:
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 9200
+      - name: transport
+        port: 9600
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 32Gi
+    limits:
+      cpu: 4000m
+      memory: 40Gi
+  env:
+    discovery.type: single-node
+    DISABLE_SECURITY_PLUGIN: "true"
+    _JAVA_OPTIONS: null
+    OPENSEARCH_JAVA_OPTS: "-Xms20g -Xmx20g -XX:+UseG1GC -XX:-UseSerialGC -XX:G1ReservePercent=25 -XX:+AlwaysPreTouch -XX:InitiatingHeapOccupancyPercent=30"
+    cluster.routing.allocation.disk.threshold_enabled: "false"
+    bootstrap.memory_lock: "false"
+    cluster.routing.allocation.disk.watermark.low: "95%"
+    cluster.routing.allocation.disk.watermark.high: "96%"
+    cluster.routing.allocation.disk.watermark.flood_stage: "97%"
+    cluster.info.update.interval: "1m"
+    OPENSEARCH_INITIAL_ADMIN_PASSWORD: "Some-random-password-which-is-greater-than-16-chars-long~"
+    node.store.allow_mmap: "false"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+    nofile:
+      soft: 65536
+      hard: 65536
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  hosts:
+    - host: langwatch-test.llmopsdev.sktax.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix       # ← 중요: 기존 ImplementationSpecific 대신 명시
+            backend:
+              service:
+                name: "langwatch-app"
+                port:
+                  number: 5560
+  tls:
+    - secretName: tls-wildcard-llmopsdev-sktax-io
+      hosts:
+        - langwatch-test.llmopsdev.sktax.io
