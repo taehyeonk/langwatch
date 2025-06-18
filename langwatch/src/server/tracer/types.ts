@@ -37,6 +37,9 @@ export type ChatRichContent =
       text?: string;
     }
   | {
+      text: string;
+    }
+  | {
       type: "image_url";
       image_url?: {
         url: string;
@@ -156,6 +159,7 @@ export type ReservedSpanParams = {
 export type SpanParams = ReservedSpanParams & Record<string, any>;
 
 export interface SpanTimestamps {
+  ignore_timestamps_on_write?: boolean | null;
   started_at: number;
   first_token_at?: number | null;
   finished_at: number;
@@ -270,6 +274,8 @@ export type ReservedTraceMetadata = {
   telemetry_sdk_language?: string | null;
   telemetry_sdk_name?: string | null;
   telemetry_sdk_version?: string | null;
+  prompt_ids?: string[] | null;
+  prompt_version_ids?: string[] | null;
 };
 
 export interface ReservedTraceMetadataMapping {
@@ -361,6 +367,7 @@ export type Evaluation = {
   error?: ErrorCapture | null;
   retries?: number | null;
   timestamps: {
+    ignore_timestamps_on_write?: boolean | null;
     inserted_at?: number | null;
     started_at?: number | null;
     finished_at?: number | null;

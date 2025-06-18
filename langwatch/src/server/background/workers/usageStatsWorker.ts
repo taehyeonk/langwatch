@@ -9,11 +9,12 @@ import {
   getJobProcessingDurationHistogram,
 } from "../../metrics";
 import { collectUsageStats } from "~/server/collectUsageStats";
+import { env } from "~/env.mjs";
 
 const logger = createLogger("langwatch:workers:usageStatsWorker");
 
 export async function runUsageStatsJob(job: Job<UsageStatsJob, void, string>) {
-  if (process.env.DISABLE_USAGE_STATS || process.env.IS_SAAS === "true") {
+  if (env.DISABLE_USAGE_STATS || env.IS_SAAS) {
     logger.info("usage stats disabled, skipping job");
     return;
   }
@@ -22,11 +23,11 @@ export async function runUsageStatsJob(job: Job<UsageStatsJob, void, string>) {
   getJobProcessingCounter("usage_stats", "processing").inc();
   const start = Date.now();
 
-  const stats = await collectUsageStats(job.data.instance_id);
-
-  logger.info({ stats }, "usage stats collected");
-
   try {
+    const stats = await collectUsageStats(job.data.instance_id);
+
+    logger.info({ stats }, "usage stats collected");
+
     const installMethod = process.env.INSTALL_METHOD || "self-hosted"; // Default to self-hosted if not specified
 
     fetch("https://app.langwatch.ai/api/track_usage", {
@@ -55,11 +56,15 @@ export async function runUsageStatsJob(job: Job<UsageStatsJob, void, string>) {
       scope.setExtra("job", job.data);
       Sentry.captureException(error);
     });
-    throw error;
   }
 }
 
 export const startUsageStatsWorker = () => {
+  if (env.DISABLE_USAGE_STATS || env.IS_SAAS) {
+    logger.info("usage stats disabled, skipping job");
+    return;
+  }
+
   if (!connection) {
     logger.info("no redis connection, skipping usage stats worker");
     return;

@@ -9,7 +9,7 @@ import { QueueWithFallback } from "./queueWithFallback";
 import { runEvaluationJob } from "../workers/evaluationsWorker";
 import type { ConnectionOptions } from "bullmq";
 
-export const EVALUATIONS_QUEUE_NAME = "evaluations";
+export const EVALUATIONS_QUEUE_NAME = "{evaluations}";
 
 const logger = createLogger("langwatch:evaluations:queue");
 
@@ -58,11 +58,11 @@ export const scheduleEvaluation = async ({
   if (currentJob) {
     const state = await currentJob.getState();
     if (state == "failed" || state == "completed") {
-      logger.info({ check, trace, state }, 'retrying'); 
+      logger.info({ check, trace, state }, "retrying");
       await currentJob.retry(state);
     }
   } else {
-    logger.info({ check, trace }, 'scheduling');
+    logger.info({ check, trace }, "scheduling");
     await evaluationsQueue.add(
       check.type,
       {

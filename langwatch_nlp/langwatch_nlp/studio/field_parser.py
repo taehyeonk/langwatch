@@ -8,7 +8,7 @@ from langwatch_nlp.studio.types.dsl import (
     NodeRef,
 )
 import dspy
-
+from pydantic import BaseModel
 from langwatch_nlp.studio.utils import SerializableWithPydanticAndPredictEncoder
 
 
@@ -61,6 +61,12 @@ def autoparse_field_value(field: Field, value: Optional[Any]) -> Optional[Any]:
                 Field(identifier=field.identifier, type=FieldType.str), value
             )
         ]
+    if field.type == FieldType.dict and isinstance(value, BaseModel):
+        return json.loads(
+            json.dumps(
+                value.model_dump(), cls=SerializableWithPydanticAndPredictEncoder
+            )
+        )
     if field.type == FieldType.llm:
         return LLMConfig.model_validate(value)
     if field.type == FieldType.prompting_technique:
@@ -84,7 +90,7 @@ def autoparse_fields(fields: List[Field], values: Dict[str, Any]) -> Dict[str, A
 T = TypeVar("T", bound=dspy.Module)
 
 
-def with_autoparsing(module: T) -> T:
+def with_autoparsing(module: type[T]) -> type[T]:
     # If already patched, repatch so new config can be picked up
     if hasattr(module, "__forward_before_autoparsing__"):
         module.forward = module.__forward_before_autoparsing__  # type: ignore
@@ -113,6 +119,18 @@ def with_autoparsing(module: T) -> T:
             return FieldType.bool
         elif annotation is str:
             return FieldType.str
+        elif (
+            annotation is dict
+            or str(annotation).startswith("dict[")
+            or str(annotation).startswith("Dict[")
+        ):
+            return FieldType.dict
+        elif (
+            annotation is list
+            or str(annotation).startswith("list[")
+            or str(annotation).startswith("List[")
+        ):
+            return FieldType.list
 
         return None  # Default to no type conversion
 

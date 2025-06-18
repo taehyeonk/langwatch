@@ -25,6 +25,7 @@ import {
   type Evaluation,
   type Span,
   type SpanInputOutput,
+  type SpanTimestamps,
 } from "../../tracer/types";
 import { COLLECTOR_QUEUE, collectorQueue } from "../queues/collectorQueue";
 import { getFirstInputAsText, getLastOutputAsText } from "./collector/common";
@@ -37,7 +38,12 @@ import {
 import { cleanupPIIs } from "./collector/piiCheck";
 import { addInputAndOutputForRAGs } from "./collector/rag";
 import { scoreSatisfactionFromInput } from "./collector/satisfaction";
-import { searchTraces, getTraceById, searchTracesWithInternals } from "~/server/elasticsearch/traces";
+import {
+  searchTraces,
+  getTraceById,
+  searchTracesWithInternals,
+} from "~/server/elasticsearch/traces";
+import { prewarmTiktokenModels } from "./collector/cost";
 
 const logger = createLogger("langwatch:workers:collectorWorker");
 
@@ -93,7 +99,10 @@ export const scheduleTraceCollectionWithGrouping = async (
     }
 
     if (existingJob && "spans" in existingJob.data) {
-      logger.debug({ collectionJobTraceId: collectorJob.traceId }, "found existing job trace, merging...");
+      logger.debug(
+        { collectionJobTraceId: collectorJob.traceId },
+        "found existing job trace, merging..."
+      );
       const mergedJob = mergeCollectorJobs(existingJob.data, collectorJob);
       await existingJob.remove();
       await collectorQueue.add("collector", mergedJob, {
@@ -101,7 +110,10 @@ export const scheduleTraceCollectionWithGrouping = async (
         delay: 10_000,
       });
     } else {
-      logger.debug({ collectionJobTraceId: collectorJob.traceId }, "collecting job trace");
+      logger.debug(
+        { collectionJobTraceId: collectorJob.traceId },
+        "collecting job trace"
+      );
       await collectorQueue.add("collector", collectorJob, {
         jobId,
         delay: index > 1 ? 10_000 : 0,
@@ -145,7 +157,10 @@ export async function processCollectorJob(
   data: CollectorJob | CollectorCheckAndAdjustJob
 ) {
   if ("spans" in data && data.spans?.length > 200) {
-    logger.warn({ spansLength: data.spans?.length, jobId: id }, "too many spans, maximum of 200 per trace, dropping job");
+    logger.warn(
+      { spansLength: data.spans?.length, jobId: id },
+      "too many spans, maximum of 200 per trace, dropping job"
+    );
     return;
   }
 
@@ -211,7 +226,10 @@ const processCollectorJob_ = async (
   try {
     spans = await addLLMTokensCount(projectId, spans);
   } catch (error) {
-    logger.debug({ error, projectId: project.id, traceId }, "failed to add LLM tokens count");
+    logger.debug(
+      { error, projectId: project.id, traceId },
+      "failed to add LLM tokens count"
+    );
     Sentry.captureException(new Error("Failed to add LLM tokens count"), {
       extra: { projectId: project.id, traceId, error: error },
     });
@@ -219,15 +237,18 @@ const processCollectorJob_ = async (
   spans = addInputAndOutputForRAGs(spans);
 
   const esSpans: ElasticSearchSpan[] = spans.map((span) => {
-    const esSpan = {
+    const currentTime = Date.now();
+    const esSpan: ElasticSearchSpan = {
       ...span,
       input: span.input ? typedValueToElasticSearch(span.input) : null,
       output: span.output ? typedValueToElasticSearch(span.output) : null,
       project_id: project.id,
       timestamps: {
         ...span.timestamps,
-        inserted_at: Date.now(),
-        updated_at: Date.now(),
+        // If ignore_timestamps_on_write is set, we'll preserve existing timestamps in the ES update script
+        // For now, set the required fields but they may be overridden during update
+        inserted_at: span.timestamps.ignore_timestamps_on_write ? (existingTrace?.inserted_at ?? currentTime) : currentTime,
+        updated_at: currentTime,
       },
     };
     if (esSpan.params && typeof span.params === "object") {
@@ -247,7 +268,9 @@ const processCollectorJob_ = async (
 
   if (existingTrace?.inserted_at) {
     // TODO: check for quickwit
-    const protections = await getProtectionsForProject(prisma, { projectId: project.id });
+    const protections = await getProtectionsForProject(prisma, {
+      projectId: project.id,
+    });
     const existingTraceResponse = await getTraceById({
       connConfig: { projectId: project.id },
       traceId: traceId,
@@ -280,7 +303,10 @@ const processCollectorJob_ = async (
     delete existingTrace?.existing_metadata.all_keys;
   }
 
-  // Create the trace 
+  // Check if any spans have ignore_timestamps_on_write flag
+  const hasIgnoreTimestamps = spans.some((span) => span.timestamps.ignore_timestamps_on_write);
+  
+  // Create the trace
   const trace: Omit<ElasticSearchTrace, "spans"> = {
     trace_id: traceId,
     project_id: project.id,
@@ -289,9 +315,9 @@ const processCollectorJob_ = async (
       ...reservedTraceMetadata,
       ...(Object.keys(customMetadata).length > 0
         ? {
-          ...customExistingMetadata,
-          custom: safeTruncate(customMetadata),
-        }
+            ...customExistingMetadata,
+            custom: safeTruncate(customMetadata),
+          }
         : {}),
       all_keys: Array.from(
         new Set([
@@ -302,9 +328,13 @@ const processCollectorJob_ = async (
       ),
     },
     timestamps: {
-      started_at:
-        Math.min(...allSpans.map((span) => span.timestamps.started_at)) ??
-        Date.now(),
+      // If any span has ignore_timestamps_on_write, preserve existing trace timestamps where possible
+      started_at: hasIgnoreTimestamps && existingTrace?.inserted_at
+        ? (existingSpans.length > 0 
+            ? Math.min(...existingSpans.map((span) => span.timestamps.started_at))
+            : Math.min(...allSpans.map((span) => span.timestamps.started_at))
+          )
+        : Math.min(...allSpans.map((span) => span.timestamps.started_at)) ?? Date.now(),
       inserted_at: existingTrace?.inserted_at ?? Date.now(),
       updated_at: Date.now(),
     } as ElasticSearchTrace["timestamps"],
@@ -451,12 +481,42 @@ const updateTrace = async (
               }
             }
             if (existingSpanIndex >= 0) {
+              def existingSpan = ctx._source.spans[existingSpanIndex];
               if (newSpan.timestamps == null) {
                 newSpan.timestamps = new HashMap();
                 newSpan.timestamps.inserted_at = currentTime;
               }
+              
+              // If ignore_timestamps_on_write is set, preserve existing timestamps where possible
+              if (newSpan.timestamps.ignore_timestamps_on_write == true && existingSpan.timestamps != null) {
+                newSpan.timestamps.started_at = existingSpan.timestamps.started_at;
+                newSpan.timestamps.inserted_at = existingSpan.timestamps.inserted_at;
+                if (existingSpan.timestamps.first_token_at != null) {
+                  newSpan.timestamps.first_token_at = existingSpan.timestamps.first_token_at;
+                }
+                if (existingSpan.timestamps.finished_at != null) {
+                  newSpan.timestamps.finished_at = existingSpan.timestamps.finished_at;
+                }
+              }
+              
               newSpan.timestamps.updated_at = currentTime;
-              ctx._source.spans[existingSpanIndex] = newSpan;
+              
+              // Deep merge spans
+              for (String key : newSpan.keySet()) {
+                if (newSpan[key] instanceof Map) {
+                  if (!existingSpan.containsKey(key) || !(existingSpan[key] instanceof Map)) {
+                    existingSpan[key] = new HashMap();
+                  }
+                  Map nestedSource = existingSpan[key];
+                  Map nestedUpdate = newSpan[key];
+                  for (String nestedKey : nestedUpdate.keySet()) {
+                    nestedSource[nestedKey] = nestedUpdate[nestedKey];
+                  }
+                } else {
+                  existingSpan[key] = newSpan[key];
+                }
+              }
+              ctx._source.spans[existingSpanIndex] = existingSpan;
             } else {
               ctx._source.spans.add(newSpan);
             }
@@ -480,10 +540,25 @@ const updateTrace = async (
               }
             }
             if (existingEvaluationIndex >= 0) {
+              def existingEvaluation = ctx._source.evaluations[existingEvaluationIndex];
               if (newEvaluation.timestamps == null) {
                 newEvaluation.timestamps = new HashMap();
                 newEvaluation.timestamps.inserted_at = currentTime;
               }
+              
+              // If ignore_timestamps_on_write is set, preserve existing timestamps where possible
+              if (newEvaluation.timestamps.ignore_timestamps_on_write == true && existingEvaluation.timestamps != null) {
+                if (existingEvaluation.timestamps.started_at != null) {
+                  newEvaluation.timestamps.started_at = existingEvaluation.timestamps.started_at;
+                }
+                if (existingEvaluation.timestamps.inserted_at != null) {
+                  newEvaluation.timestamps.inserted_at = existingEvaluation.timestamps.inserted_at;
+                }
+                if (existingEvaluation.timestamps.finished_at != null) {
+                  newEvaluation.timestamps.finished_at = existingEvaluation.timestamps.finished_at;
+                }
+              }
+              
               newEvaluation.timestamps.updated_at = currentTime;
               ctx._source.evaluations[existingEvaluationIndex] = newEvaluation;
             } else {
@@ -546,7 +621,7 @@ export const processCollectorCheckAndAdjustJob = async (
           ],
           should: void 0,
           must_not: void 0,
-        }
+        },
       },
       _source: [
         "spans",
@@ -629,7 +704,7 @@ export const processCollectorCheckAndAdjustJob = async (
     // Does not schedule evaluations for traces that are not from the studio in development
     (!isCustomMetadataObject || // If it's not an object, proceed with evaluations
       customMetadata?.platform !== "optimization_studio" ||
-      customMetadata?.environment !== "development") 
+      customMetadata?.environment !== "development")
   ) {
     await scheduleEvaluations(trace, spans);
   }
@@ -650,6 +725,8 @@ export const startCollectorWorker = () => {
     logger.debug("no redis connection, skipping collector worker");
     return;
   }
+
+  prewarmTiktokenModels();
 
   const collectorWorker = new Worker<CollectorJob, void, string>(
     COLLECTOR_QUEUE,
@@ -723,10 +800,10 @@ const markProjectFirstMessage = async (
           metadata.custom?.platform === "optimization_studio"
             ? "other"
             : metadata.sdk_language === "python"
-              ? "python"
-              : metadata.sdk_language === "typescript"
-                ? "typescript"
-                : "other",
+            ? "python"
+            : metadata.sdk_language === "typescript"
+            ? "typescript"
+            : "other",
       },
     });
   }
@@ -737,11 +814,11 @@ export const fetchExistingMD5s = async (
   projectId: string
 ): Promise<
   | {
-    indexing_md5s: ElasticSearchTrace["indexing_md5s"];
-    inserted_at: number | undefined;
-    existing_metadata: ElasticSearchTrace["metadata"];
-    version: number | undefined;
-  }
+      indexing_md5s: ElasticSearchTrace["indexing_md5s"];
+      inserted_at: number | undefined;
+      existing_metadata: ElasticSearchTrace["metadata"];
+      version: number | undefined;
+    }
   | undefined
 > => {
   const existingTracesWithInternals = await searchTracesWithInternals({

@@ -46,7 +46,11 @@ export const loadDatasets = async (
           node.data.dataset.inline.records
         );
         const selectedRecords = (
-          entrySelection == "random"
+          typeof entrySelection === "number"
+            ? entrySelection >= 0 && entrySelection < records.length
+              ? [records[entrySelection]!]
+              : [records[0]!]
+            : entrySelection == "random"
             ? [records[Math.floor(Math.random() * records.length)]!]
             : entrySelection === "last"
             ? [records[records.length - 1]!]
@@ -69,9 +73,13 @@ export const loadDatasets = async (
         };
       }
 
-      // Select from database dataset
+      // For database datasets, we'll just pass the ID and let the Python SDK fetch it
       if (!node.data.dataset.id) {
         throw new Error("Dataset ID is required");
+      }
+
+      if (entrySelection == "all") {
+        return node;
       }
 
       const dataset = await getFullDataset({

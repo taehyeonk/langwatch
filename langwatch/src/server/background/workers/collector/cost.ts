@@ -1,5 +1,4 @@
-import { Tiktoken } from "tiktoken/lite";
-import { load } from "tiktoken/load";
+import { type Tiktoken } from "tiktoken/lite";
 // @ts-ignore
 import registry from "tiktoken/registry.json";
 // @ts-ignore
@@ -11,6 +10,9 @@ import {
 import * as Sentry from "@sentry/nextjs";
 import NodeFetchCache, { FileSystemCache } from "node-fetch-cache";
 import { createLogger } from "../../../../utils/logger";
+import { isBuildOrNoRedis } from "../../../redis";
+import fs from "fs/promises";
+import path from "path";
 
 const logger = createLogger("langwatch:workers:collector:cost");
 
@@ -32,6 +34,19 @@ const loadingModel = new Set<string>();
 const initTikToken = async (
   modelName: string
 ): Promise<{ encoder: Tiktoken } | undefined> => {
+  let Tiktoken: typeof import("tiktoken/lite").Tiktoken;
+  let load: typeof import("tiktoken/load").load;
+  try {
+    Tiktoken = (await import("tiktoken/lite")).Tiktoken;
+    load = (await import("tiktoken/load")).load;
+  } catch (error) {
+    logger.warn(
+      { error },
+      "tiktoken could not be loaded, skipping tokenization"
+    );
+    return undefined;
+  }
+
   const fallback = "gpt-4o";
   const tokenizer =
     modelName in models
@@ -49,6 +64,7 @@ const initTikToken = async (
   }
 
   if (!cachedModel[tokenizer]) {
+    logger.info(`loading tiktoken model ${tokenizer}`);
     loadingModel.add(tokenizer);
     const registryInfo = (registry as any)[tokenizer];
     const fetch = NodeFetchCache.create({
@@ -57,9 +73,35 @@ const initTikToken = async (
         ttl: 1000 * 60 * 60 * 24 * 365, // 1 year
       }),
     });
-    const model = await load(registryInfo, (url) =>
-      fetch(url).then((r) => r.text())
-    );
+
+    const model = await load(registryInfo, async (url) => {
+      const filename = path.basename(url);
+
+      // Prevent directory traversal
+      const isSafeFilename = /^[a-zA-Z0-9._-]+$/.test(filename);
+      if (!isSafeFilename) {
+        logger.warn({ filename }, "Unsafe filename detected; using remote fetch instead");
+        return fetch(url).then((r) => r.text());
+      }
+
+      if (process.env.TIKTOKENS_PATH) {
+        const localPath = path.join(process.env.TIKTOKENS_PATH, filename);
+        logger.debug({ localPath }, "Attempting to load tiktoken model from local file");
+
+        try {
+          return await fs.readFile(localPath, "utf8");
+        } catch (error) {
+          logger.warn(
+            { localPath, error: error instanceof Error ? error.message : String(error) },
+            "Local read failed; falling back to remote fetch"
+          );
+        }
+      }
+
+      // Default: fetch from remote
+      return fetch(url).then((r) => r.text());
+    });
+
     const encoder = new Tiktoken(
       model.bpe_ranks,
       model.special_tokens,
@@ -157,5 +199,11 @@ export const getMatchingLLMModelCost = async (
 };
 
 // Pre-warm most used models
-initTikToken("gpt-4");
-initTikToken("gpt-4o");
+export const prewarmTiktokenModels = async () => {
+  await initTikToken("gpt-4");
+  await initTikToken("gpt-4o");
+};
+
+if (isBuildOrNoRedis) {
+  prewarmTiktokenModels();
+}

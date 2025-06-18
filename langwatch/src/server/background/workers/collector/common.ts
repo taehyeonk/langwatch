@@ -153,7 +153,7 @@ export const typedValueToText = (
           ? lastMessage.content
           : Array.isArray(lastMessage.content)
           ? lastMessage.content
-              .map((c) => (c.type === "text" ? c.text : JSON.stringify(c)))
+              .map((c) => ("text" in c ? c.text : JSON.stringify(c)))
               .join("")
           : JSON.stringify(lastMessage)
         : "";
@@ -179,6 +179,9 @@ export const typedValueToText = (
       }
       if (json.query !== undefined) {
         return json.user_query;
+      }
+      if (json.message !== undefined && typeof json.message === "string") {
+        return json.message;
       }
       // Langflow
       if (json.input_value !== undefined) {
@@ -288,7 +291,12 @@ export const typedValueToText = (
     try {
       const json = typed.value as any;
 
-      const value = specialKeysMapping(json);
+      const value =
+        Array.isArray(json) && json.length == 1
+          ? typeof json[0] === "string"
+            ? json[0]
+            : specialKeysMapping(json[0])
+          : specialKeysMapping(json);
       if (value !== undefined) {
         return firstAndOnlyKey(value) ?? stringified(value);
       }

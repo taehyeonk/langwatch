@@ -5,10 +5,10 @@ import { runUsageStatsJob } from "../workers/usageStatsWorker";
 import type { ConnectionOptions } from "bullmq";
 import { prisma } from "../../db";
 import { createLogger } from "../../../utils/logger";
-
+import { env } from "~/env.mjs";
 const logger = createLogger("langwatch:usageStatsQueue");
 
-export const USAGE_STATS_QUEUE_NAME = "usage_stats";
+export const USAGE_STATS_QUEUE_NAME = "{usage_stats}";
 
 export const usageStatsQueue = new QueueWithFallback<
   UsageStatsJob,
@@ -42,8 +42,12 @@ export const scheduleUsageStats = async () => {
     },
   });
 
+  if (env.DISABLE_USAGE_STATS || env.IS_SAAS) {
+    return;
+  }
+
   if (organizations.length === 0) {
-    logger.error("No organizations found");
+    logger.debug("No organizations found, skipping usage stats");
     return;
   }
 
@@ -83,10 +87,7 @@ export const scheduleUsageStatsForOrganization = async (organization: {
   id: string;
   name: string;
 }) => {
-  if (
-    process.env.DISABLE_USAGE_STATS === "true" ||
-    process.env.IS_SAAS === "true"
-  ) {
+  if (env.DISABLE_USAGE_STATS || env.IS_SAAS) {
     return;
   }
 

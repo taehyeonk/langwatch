@@ -1,4 +1,12 @@
-import { Box, Grid, GridItem, Skeleton, Text, VStack } from "@chakra-ui/react";
+import {
+  Alert,
+  Box,
+  Grid,
+  GridItem,
+  Skeleton,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { useRouter } from "next/router";
 import { useEffect, useRef } from "react";
 import { useOrganizationTeamProject } from "../../hooks/useOrganizationTeamProject";
@@ -18,13 +26,14 @@ export function Conversation({
   const traceIdParam = (router.query.trace as string) || traceId;
   const { trace } = useTraceDetailsState(traceIdParam);
 
-  const { project } = useOrganizationTeamProject();
+  const { project, isPublicRoute } = useOrganizationTeamProject();
 
   const currentTraceRef = useRef<HTMLDivElement>(null);
   const threadTraces = api.traces.getTracesByThreadId.useQuery(
     {
       projectId: project?.id ?? "",
       threadId: threadId ?? "",
+      traceId: traceId ?? "",
     },
     {
       enabled: !!project && !!threadId,
@@ -54,31 +63,43 @@ export function Conversation({
 
   return (
     <Box width="full" minWidth="800px" paddingX={6}>
+      {threadTraces.data && threadTraces.data.length > 50 && (
+        <Alert.Root status="info">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>
+              Over 50 messages found in thread, showing only the last 50.
+            </Alert.Title>
+          </Alert.Content>
+        </Alert.Root>
+      )}
       <VStack align="start" width="full" gap={0}>
         {!!threadId || trace.data ? (
           <>
             {threadId ? (
               threadTraces.data ? (
-                threadTraces.data.map((trace, index) => (
-                  <TraceMessages
-                    key={trace.trace_id}
-                    trace={trace}
-                    index={
-                      threadTraces.data.length === 1
-                        ? "only"
-                        : index === 0
-                        ? "first"
-                        : index === threadTraces.data.length - 1
-                        ? "last"
-                        : "other"
-                    }
-                    ref={
-                      trace.trace_id == traceId ? currentTraceRef : undefined
-                    }
-                    highlighted={trace.trace_id == modalTraceId}
-                  />
-                ))
-              ) : threadTraces.error ? (
+                threadTraces.data
+                  .slice(Math.max(0, threadTraces.data.length - 50))
+                  .map((trace, index) => (
+                    <TraceMessages
+                      key={trace.trace_id}
+                      trace={trace}
+                      index={
+                        threadTraces.data.length === 1
+                          ? "only"
+                          : index === 0
+                          ? "first"
+                          : index === threadTraces.data.length - 1
+                          ? "last"
+                          : "other"
+                      }
+                      ref={
+                        trace.trace_id == traceId ? currentTraceRef : undefined
+                      }
+                      highlighted={trace.trace_id == modalTraceId}
+                    />
+                  ))
+              ) : threadTraces.error && !isPublicRoute ? (
                 <Box maxWidth="800px" paddingTop={8} paddingBottom={4}>
                   <Text color="red.500">
                     Something went wrong trying to load previous messages

@@ -30,7 +30,6 @@ global:
     enabled: false
     prometheusAnnotations: true
 
-
 # Image configurations
 images:
   app:
@@ -57,7 +56,6 @@ images:
     repository: langwatch/opensearch-lite
     tag: latest
     pullPolicy: IfNotPresent
-
 
 # Service configurations
 app:
@@ -87,7 +85,6 @@ app:
     NEXTAUTH_SECRET: "Dt6YPSw6YHaTbooOqoE6g4UjvMn1cZXUJubAksbq61w="  # Users must provide this values
     API_TOKEN_JWT_SECRET: "ETC9IQQKOP5+2kKjbusGt5Uo+gGPCp4oudciUSaezO4="  # Users must provide this values
     # SENDGRID_API_KEY: ""  # Optional
-
 
 langwatch_nlp:
   replicaCount: 3
@@ -199,7 +196,6 @@ opensearch:
       soft: 65536
       hard: 65536
 
-
 # Ingress configuration
 ingress:
   enabled: true
@@ -208,9 +204,15 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
   hosts:
     - host: langwatch.llmopsdev.sktax.io
-      paths:
-        - path: /
-          pathType: Prefix
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: "langwatch-app"
+                port:
+                  number: 5560
   tls:
     - secretName: tls-wildcard-llmopsdev-sktax-io
       hosts:

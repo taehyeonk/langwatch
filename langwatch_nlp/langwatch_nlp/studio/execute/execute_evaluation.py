@@ -30,6 +30,8 @@ from dspy.evaluate import Evaluate
 from dspy.utils.asyncify import asyncify
 from sklearn.model_selection import train_test_split
 
+import langwatch
+
 
 async def execute_evaluation(
     event: ExecuteEvaluationPayload, queue: "ServerEventQueue"
@@ -55,6 +57,7 @@ async def execute_evaluation(
         ) as (Module, _):
             module = Module(run_evaluations=True)
             module.prevent_crashes()
+            langwatch.setup(workflow.api_key)
 
             entry_node = cast(
                 EntryNode,
@@ -63,10 +66,17 @@ async def execute_evaluation(
             if not entry_node.data.dataset:
                 raise ValueError("Missing dataset in entry node")
 
-            assert entry_node.data.dataset.inline is not None
-            entries = transpose_inline_dataset_to_object_list(
-                entry_node.data.dataset.inline
-            )
+            if entry_node.data.dataset.inline:
+                entries = transpose_inline_dataset_to_object_list(
+                    entry_node.data.dataset.inline
+                )
+            else:
+                # Fetch dataset from the API
+                if not entry_node.data.dataset.id:
+                    raise ValueError("Dataset ID is required")
+
+                dataset = langwatch.dataset.get_dataset(entry_node.data.dataset.id)
+                entries = [entry.entry for entry in dataset.entries]
 
             train_size = entry_node.data.train_size
             test_size = entry_node.data.test_size
@@ -91,6 +101,20 @@ async def execute_evaluation(
                     random_state=(seed if seed >= 0 else None),
                     shuffle=(seed >= 0),
                 )
+            elif event.evaluate_on == "specific":
+                if event.dataset_entry is None:
+                    raise ValueError(
+                        "dataset_entry is required for specific evaluation"
+                    )
+                if (
+                    not isinstance(event.dataset_entry, int)
+                    or event.dataset_entry < 0
+                    or event.dataset_entry >= len(entries)
+                ):
+                    raise ValueError(
+                        f"Invalid dataset_entry index: {event.dataset_entry}"
+                    )
+                entries = [entries[event.dataset_entry]]
             else:
                 raise ValueError(f"Invalid evaluate_on value: {event.evaluate_on}")
 
@@ -118,7 +142,7 @@ async def execute_evaluation(
             )
             # Send initial empty batch to create the experiment in LangWatch
             reporting.send_batch()
-            await asyncify(evaluator)(module, metric=reporting.evaluate_and_report) # type: ignore
+            await asyncify(evaluator)(module, metric=reporting.evaluate_and_report)  # type: ignore
             await reporting.wait_for_completion()
     except Exception as e:
         yield error_evaluation_event(run_id, str(e), stopped_at=int(time.time() * 1000))

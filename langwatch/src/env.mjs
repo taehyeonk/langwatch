@@ -33,6 +33,7 @@ export const env = createEnv({
     ELASTICSEARCH_NODE_URL: optionalIfBuildTime(z.string().min(1)),
     ELASTICSEARCH_API_KEY: z.string().optional(),
     REDIS_URL: z.string().optional(),
+    REDIS_CLUSTER_ENDPOINTS: z.string().optional(),
     GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
     AZURE_OPENAI_ENDPOINT: z.string().optional(),
     AZURE_OPENAI_KEY: z.string().optional(),
@@ -64,6 +65,7 @@ export const env = createEnv({
     AZURE_TENANT_ID: z.string().optional(),
     POSTHOG_KEY: z.string().optional(),
     POSTHOG_HOST: z.string().optional(),
+    DISABLE_USAGE_STATS: z.boolean().optional(),
   },
 
   /**
@@ -93,6 +95,7 @@ export const env = createEnv({
     ELASTICSEARCH_NODE_URL: process.env.ELASTICSEARCH_NODE_URL,
     ELASTICSEARCH_API_KEY: process.env.ELASTICSEARCH_API_KEY,
     REDIS_URL: process.env.REDIS_URL,
+    REDIS_CLUSTER_ENDPOINTS: process.env.REDIS_CLUSTER_ENDPOINTS,
     GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     AZURE_OPENAI_ENDPOINT: process.env.AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_KEY: process.env.AZURE_OPENAI_KEY,
@@ -138,6 +141,9 @@ export const env = createEnv({
     AZURE_TENANT_ID: process.env.AZURE_TENANT_ID,
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
+    DISABLE_USAGE_STATS:
+      process.env.DISABLE_USAGE_STATS === "1" ||
+      process.env.DISABLE_USAGE_STATS?.toLowerCase() === "true",
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation.

@@ -1,6 +1,6 @@
 import { Spinner, VStack } from "@chakra-ui/react";
 import { useUpdateNodeInternals, type Node } from "@xyflow/react";
-import debounce from "lodash.debounce";
+import debounce from "lodash-es/debounce";
 import { useEffect, useMemo, useRef } from "react";
 import { FormProvider, useFieldArray } from "react-hook-form";
 
@@ -416,6 +416,9 @@ export function SignaturePropertiesPanel({
               max_tokens: llm?.max_tokens ?? currentConfigData.max_tokens,
               demonstrations:
                 rest?.demonstrations ?? currentConfigData.demonstrations,
+              prompting_technique:
+                rest?.prompting_technique ??
+                currentConfigData.prompting_technique,
             } as LatestConfigVersionSchema["configData"],
             "Save from legacy node"
           );
